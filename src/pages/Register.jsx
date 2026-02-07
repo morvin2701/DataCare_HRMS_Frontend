@@ -74,7 +74,7 @@ const Register = () => {
             console.error(error);
             setMessage({
                 type: 'error',
-                text: error.response?.data?.detail || 'Registration failed. Please try again.'
+                text: error.response?.data?.detail || error.message || 'Registration failed. Please try again.'
             });
             setLoading(false);
         }
