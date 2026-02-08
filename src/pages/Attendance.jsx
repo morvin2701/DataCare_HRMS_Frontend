@@ -6,40 +6,38 @@ import { Camera, Clock, CheckCircle, XCircle, Loader, Zap, Sparkles } from 'luci
 import { motion, AnimatePresence } from 'framer-motion';
 
 const Attendance = () => {
-    const [capturedImage, setCapturedImage] = useState(null);
     const [message, setMessage] = useState({ type: '', text: '', user: null });
-    const [loading, setLoading] = useState(false);
     const [attendanceType, setAttendanceType] = useState('IN');
+    const [lastProcessed, setLastProcessed] = useState(0);
+    const COOLDOWN_MS = 5000; // 5 seconds cooldown between successful scans
 
-    const handleRecognition = async () => {
-        if (!capturedImage) {
-            setMessage({ type: 'error', text: 'Please capture an image first!', user: null });
-            return;
-        }
+    const handleRecognition = async (file) => {
+        // Prevent processing if within cooldown period of a success
+        if (Date.now() - lastProcessed < COOLDOWN_MS) return;
 
-        setLoading(true);
         try {
             const formData = new FormData();
             formData.append('type', attendanceType);
-            formData.append('file', capturedImage);
+            formData.append('file', file);
 
             const response = await axios.post(`${config.API_URL}/recognize`, formData);
+
+            // Only update state on success
             setMessage({
                 type: 'success',
                 text: response.data.message,
                 user: response.data.user
             });
-            setCapturedImage(null);
-        } catch (error) {
-            setMessage({
-                type: 'error',
-                text: error.response?.data?.detail || 'Recognition failed. Please try again.',
-                user: null
-            });
-        }
-        setLoading(false);
+            setLastProcessed(Date.now());
 
-        setTimeout(() => setMessage({ type: '', text: '', user: null }), 5000);
+            // Clear success message after 4 seconds
+            setTimeout(() => setMessage({ type: '', text: '', user: null }), 4000);
+
+        } catch (error) {
+            // Silently fail for live scanning unless it's a critical error
+            // We don't want to show red error boxes every 2 seconds if face isn't clear
+            console.log("Recognition attempt failed:", error.response?.data?.detail);
+        }
     };
 
     return (
@@ -84,10 +82,10 @@ const Attendance = () => {
                             </h3>
                             <div className="flex items-center gap-2 px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-xl">
                                 <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                                <span className="text-red-400 text-sm font-semibold">RECORDING</span>
+                                <span className="text-red-400 text-sm font-semibold">SCANNING</span>
                             </div>
                         </div>
-                        <WebcamCapture onCapture={setCapturedImage} />
+                        <WebcamCapture onCapture={handleRecognition} isLive={true} />
                     </motion.div>
 
                     {/* Right: Controls */}
@@ -138,26 +136,6 @@ const Attendance = () => {
                                     </div>
                                 </motion.button>
                             </div>
-
-                            <motion.button
-                                onClick={handleRecognition}
-                                disabled={loading || !capturedImage}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                className="btn-primary w-full flex items-center justify-center gap-3 text-lg py-5"
-                            >
-                                {loading ? (
-                                    <>
-                                        <Loader className="animate-spin" size={24} />
-                                        Recognizing...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Sparkles size={24} />
-                                        Mark Attendance
-                                    </>
-                                )}
-                            </motion.button>
                         </div>
 
                         {/* Status Messages */}
