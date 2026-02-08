@@ -3,33 +3,57 @@ import Webcam from 'react-webcam';
 import { Camera, RotateCcw, Check, ScanFace } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const WebcamCapture = ({ onCapture, isLive = false }) => {
+const WebcamCapture = ({ onCapture, isLive = false, paused = false }) => {
     const webcamRef = useRef(null);
     const [imageSrc, setImageSrc] = useState(null);
     const [isScanning, setIsScanning] = useState(false);
 
+    // Use a ref to store the latest callback so we don't need to add it to useEffect dependencies
+    const onCaptureRef = useRef(onCapture);
+
+    // Update the ref whenever the callback changes
+    React.useEffect(() => {
+        onCaptureRef.current = onCapture;
+    }, [onCapture]);
+
     // Auto-capture for live mode
     React.useEffect(() => {
         let interval;
-        if (isLive && !imageSrc) {
+        console.log("WebcamCapture Effect: isLive=", isLive, "paused=", paused, "imageSrc=", !!imageSrc);
+
+        if (isLive && !paused && !imageSrc) {
+            console.log("Starting scan interval...");
             setIsScanning(true);
             interval = setInterval(() => {
+                console.log("Scan interval tick...");
                 if (webcamRef.current) {
                     const imageSrc = webcamRef.current.getScreenshot();
                     if (imageSrc) {
+                        console.log("Image captured, sending to onCapture...");
                         // Convert base64 to blob for upload
                         fetch(imageSrc)
                             .then(res => res.blob())
                             .then(blob => {
                                 const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
-                                onCapture(file);
+                                // Call the callback via ref
+                                if (onCaptureRef.current) {
+                                    onCaptureRef.current(file);
+                                }
                             });
+                    } else {
+                        console.log("Webcam ref present but no screenshot available");
                     }
+                } else {
+                    console.log("Webcam ref is null");
                 }
             }, 2000); // Scan every 2 seconds
         }
-        return () => clearInterval(interval);
-    }, [isLive, imageSrc, onCapture]);
+        return () => {
+            console.log("Clearing scan interval");
+            clearInterval(interval);
+        };
+        // CRITICAL: onCapture is NOT in dependencies, so the interval doesn't reset when the parent re-renders
+    }, [isLive, imageSrc, paused]);
 
     const capture = () => {
         const imageSrc = webcamRef.current.getScreenshot();
@@ -40,14 +64,18 @@ const WebcamCapture = ({ onCapture, isLive = false }) => {
             .then(res => res.blob())
             .then(blob => {
                 const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
-                onCapture(file);
+                if (onCaptureRef.current) {
+                    onCaptureRef.current(file);
+                }
             });
     };
 
     const retake = () => {
         setImageSrc(null);
         if (!isLive) {
-            onCapture(null);
+            if (onCaptureRef.current) {
+                onCaptureRef.current(null);
+            }
         }
     };
 
