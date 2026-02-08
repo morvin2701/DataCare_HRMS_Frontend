@@ -1,13 +1,20 @@
 // Vercel serverless function to proxy requests to HTTP backend
 // This solves the HTTPS -> HTTP mixed content blocking issue
 
+// Disable Vercel's body parser to handle raw FormData
+export const config = {
+    api: {
+        bodyParser: false,
+    },
+};
+
 export default async function handler(req, res) {
     const BACKEND_URL = 'http://82.29.165.232';
 
     // Enable CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', '*');
 
     // Handle preflight
     if (req.method === 'OPTIONS') {
@@ -18,19 +25,29 @@ export default async function handler(req, res) {
         const path = req.url.replace('/api/proxy', '');
         const targetUrl = `${BACKEND_URL}${path}`;
 
-        const options = {
-            method: req.method,
-            headers: {
-                'Content-Type': req.headers['content-type'] || 'application/json',
-            },
-        };
-
-        // Forward body for POST/PUT requests
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-            options.body = JSON.stringify(req.body);
+        // Build headers
+        const headers = {};
+        if (req.headers['content-type']) {
+            headers['Content-Type'] = req.headers['content-type'];
         }
 
-        const response = await fetch(targetUrl, options);
+        // Build fetch options
+        const fetchOptions = {
+            method: req.method,
+            headers: headers,
+        };
+
+        // Forward body for non-GET requests by reading raw request stream
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+            const chunks = [];
+            for await (const chunk of req) {
+                chunks.push(chunk);
+            }
+            fetchOptions.body = Buffer.concat(chunks);
+        }
+
+        // Make request to backend
+        const response = await fetch(targetUrl, fetchOptions);
         const data = await response.json();
 
         return res.status(response.status).json(data);
